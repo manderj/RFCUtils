@@ -2,12 +2,16 @@ import functools
 import itertools
 import urllib.request
 from urllib.parse import urljoin
+import shutil
 
 import click
 from lxml import etree
 
 from rfcutils import constant
 from rfcutils import settings
+
+
+width, _height = shutil.get_terminal_size()
 
 
 @functools.lru_cache(1)
@@ -23,8 +27,9 @@ def update_rfc_index():
                 'url': functools.partial(constant.RFC_FILE_URL, rfc_number),
                 'formats': [child.text for child in entry.find(constant.RFC_FORMAT_TAG).getchildren()],
                 'current-status': entry.find(constant.RFC_CURRENT_STATUS_TAG).text,
-                'abstract': ' '.join(child.text for child in (
-                    entry.find(constant.RFC_ABSTRACT_TAG).getchildren() if entry.find(constant.RFC_ABSTRACT_TAG) else []
+                'abstract': ' '.join(child.text.replace('\n', ' ').replace('  ', ' ') for child in (
+                    entry.find(constant.RFC_ABSTRACT_TAG).getchildren()
+                    if entry.find(constant.RFC_ABSTRACT_TAG) is not None else []
                 )),
             }
         })
@@ -35,7 +40,48 @@ def _get_rfc_index_subset(rfc_index, predicate):
     return {rfc_number: rfc_values for rfc_number, rfc_values in rfc_index.items() if predicate(rfc_number, rfc_values)}
 
 
-@click.command()
+def _get_text_snippet(text, max_length):
+    max_length = max_length - 3
+    _current_length = 0
+
+    for index, word in enumerate(text.split(' ')):
+        length = len(word) + 1 if index else len(word)
+        if _current_length + length > max_length:
+            break
+        _current_length += length
+    return f"{text[:_current_length]}{'...' if len(text) > _current_length else ''}"
+
+
+@click.group()
+def rfcutils():
+    # mandatory for click to group all commands in same file
+    # to work correcly
+    pass
+
+
+@rfcutils.command()
+@click.argument('keywords', nargs=-1)
+@click.pass_context
+def search(ctx, keywords):
+    rfc_index = update_rfc_index()
+    # FIXME: can't call another command directly
+    # ensure all rfc have been downloaded locally in txt format
+    ctx.invoke(download, filetypes=[constant.TXT])
+
+    rfc_matching = {}
+    for rfc in settings.download_path.rglob('*.txt'):
+        rfc_number = rfc.stem.split("rfc_")[1]
+        if any(keyword in rfc.read_text() for keyword in keywords):
+            rfc_matching.update({rfc_number: rfc_index[rfc_number]})
+
+    for rfc_number, rfc_values in sorted(rfc_matching.items(), key=lambda item: item[0]):
+        abstract = _get_text_snippet(rfc_values['abstract'], max_length=width - 8)  # 8 = '[RFC_NUMBER]: ' prefix length
+        click.echo(click.style(f'[{rfc_number}]', fg='green') + f":\t{abstract}")
+
+    return rfc_matching.keys()
+
+
+@rfcutils.command()
 @click.option('--rfc_numbers', default=['all'], multiple=True, help="rfc_numbers list to get")
 @click.option(
     '--desc_contain', type=click.STRING, multiple=True,
