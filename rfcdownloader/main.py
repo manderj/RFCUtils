@@ -71,45 +71,47 @@ def _get_rfc_index_subset(rfc_index, predicate):
 @click.option('--statuses', type=click.Choice(RFC_STATUSES), default=[], multiple=True)
 @click.option('--filetypes', type=click.Choice(RFC_FILETYPES), default=[TXT, PDF, HTML], multiple=True, help="format to retrieved")
 @click.option('--download-again', default=False, is_flag=True, help="Download again the filtered rfc list")
-def download(rfc_numbers, desc_contain, statuses, filetypes, download_again):
+def download(*args, **kwargs):
     rfc_index = update_rfc_index()
 
-    # narrow the rfc list to download
-    rfc_subset = {}
-    if 'all' in rfc_numbers:
-        rfc_subset = _get_rfc_index_subset(rfc_index, lambda rfc_number, _rfc_values: rfc_number in rfc_index.keys())
+    # Narrow the RFC list to download
+    rfc_subset = rfc_index
+    if 'all' in kwargs['rfc_numbers']:
+        kwargs['rfc_numbers'] = rfc_index.keys()
     else:
         # fill missing leading zero
-        rfc_numbers = [f'{rfc_number:0>4}' for rfc_number in rfc_numbers]
-        rfc_subset = _get_rfc_index_subset(rfc_index, lambda rfc_number, _rfc_values: rfc_number in rfc_numbers)
+        kwargs['rfc_numbers'] = [f'{rfc_number:0>4}' for rfc_number in kwargs['rfc_numbers']]
 
-    if desc_contain:
-        rfc_subset = _get_rfc_index_subset(rfc_subset, lambda _rfc_number, rfc_values: any(
-            word in rfc_values['title'] or word in rfc_values['abstract'] for word in desc_contain
-        ))
+    predicate_by_filtering = {
+        'rfc_numbers': lambda rfc_number, _rfc_values: rfc_number in kwargs['rfc_numbers'],
+        'desc_contain': lambda _rfc_number, rfc_values: any(
+            word in rfc_values['title'] or word in rfc_values['abstract'] for word in kwargs['desc_contain']
+        ),
+        'statuses': lambda _rfc_number, rfc_values: any(
+             status in rfc_values['current-status'] for status in kwargs['statuses']
+        ),
+        # FIXME: sadly, rfc-index.xml isn't perfect and doesn't provide
+        # an exaustive list of available formats for each RFC
+        'filetypes': lambda _rfc_number, rfc_values: any(
+            FILETYPE_TO_FORMAT_MAPPING[filetype] in rfc_values['formats'] for filetype in kwargs['filetypes']
+        ),
+    }
 
-    if statuses:
-        rfc_subset = _get_rfc_index_subset(rfc_subset, lambda _rfc_number, rfc_values: any(
-             status in rfc_values['current-status'] for status in statuses
-        ))
-
-    # FIXME: sadly, rfc-index isn't perfect and a lot of missing formats for each RFC
-    if filetypes:
-        rfc_subset = _get_rfc_index_subset(rfc_subset, lambda _rfc_number, rfc_values: any(
-            FILETYPE_TO_FORMAT_MAPPING[filetype] in rfc_values['formats'] for filetype in filetypes
-        ))
+    for filtering, predicate in predicate_by_filtering.items():
+        if kwargs[filtering]:
+            rfc_subset = _get_rfc_index_subset(rfc_subset, predicate)
 
     if not rfc_subset:
-        print("No RFC found.")
+        print("No RFC found with the current filterings.")
         return
 
     if not settings.download_path.exists():
         settings.download_path.mkdir()
 
     for rfc_number, rfc_values in rfc_subset.items():
-        for filetype in filetypes:
+        for filetype in kwargs['filetypes']:
             path = (settings.download_path / f'rfc_{rfc_number}.{filetype.lower()}')
-            if not download_again and path.exists() and path.stat().st_size:
+            if not kwargs['download_again'] and path.exists() and path.stat().st_size:
                 break
             try:
                 rfc_request = urllib.request.urlopen(rfc_values['url'](filetype.lower()))
