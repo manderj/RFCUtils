@@ -1,18 +1,16 @@
 import functools
 import itertools
-import pathlib
 import urllib.request
 from urllib.parse import urljoin
-import os
 
 import click
 from lxml import etree
 import requests
 
+import settings
 
 SITE_URL = 'https://www.ietf.org/rfc/'
 
-DEFAULT_DOWNLOAD_FOLDER = './rfc'
 
 XML_TAG = '{http://www.rfc-editor.org/rfc-index}'
 RFC_ENTRY_TAG = f'{XML_TAG}rfc-entry'
@@ -71,9 +69,6 @@ def _get_rfc_index_subset(rfc_index, predicate):
 def download(rfc_numbers, desc_contain, statuses, filetypes):
     rfc_index = update_rfc_index()
 
-    defined_dl_folder = os.getenv('RFCDOWNLOADER_FOLDER', DEFAULT_DOWNLOAD_FOLDER)
-    download_folder = pathlib.Path(defined_dl_folder).expanduser()
-
     # narrow the rfc list to download
     rfc_subset = {}
     if 'all' in rfc_numbers:
@@ -103,12 +98,12 @@ def download(rfc_numbers, desc_contain, statuses, filetypes):
         print("No RFC found.")
         return
 
-    if not download_folder.exists():
-        download_folder.mkdir()
+    if not settings.download_path.exists():
+        settings.download_path.mkdir()
 
     for rfc_number, rfc_values in rfc_subset.items():
         for filetype in filetypes:
-            path = (download_folder / f'rfc_{rfc_number}.{filetype.lower()}')
+            path = (settings.download_path / f'rfc_{rfc_number}.{filetype.lower()}')
             if path.exists() and path.stat().st_size:
                 break
             try:
@@ -119,6 +114,7 @@ def download(rfc_numbers, desc_contain, statuses, filetypes):
                 continue
             path.write_text(rfc_request.read().decode('utf8'))
             break
+
 
 if __name__ == '__main__':
     download()
