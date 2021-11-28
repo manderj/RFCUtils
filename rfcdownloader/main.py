@@ -70,7 +70,8 @@ def _get_rfc_index_subset(rfc_index, predicate):
 @click.option('--desc_contain', multiple=True, type=click.STRING, help="download rfc description containing the given words")
 @click.option('--statuses', type=click.Choice(RFC_STATUSES), default=[], multiple=True)
 @click.option('--filetypes', type=click.Choice(RFC_FILETYPES), default=[TXT, PDF, HTML], multiple=True, help="format to retrieved")
-def download(rfc_numbers, desc_contain, statuses, filetypes):
+@click.option('--download-again', default=False, is_flag=True, help="Download again the filtered rfc list")
+def download(rfc_numbers, desc_contain, statuses, filetypes, download_again):
     rfc_index = update_rfc_index()
 
     # narrow the rfc list to download
@@ -108,7 +109,7 @@ def download(rfc_numbers, desc_contain, statuses, filetypes):
     for rfc_number, rfc_values in rfc_subset.items():
         for filetype in filetypes:
             path = (settings.download_path / f'rfc_{rfc_number}.{filetype.lower()}')
-            if path.exists() and path.stat().st_size:
+            if not download_again and path.exists() and path.stat().st_size:
                 break
             try:
                 rfc_request = urllib.request.urlopen(rfc_values['url'](filetype.lower()))
