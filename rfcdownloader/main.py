@@ -17,6 +17,7 @@ RFC_ENTRY_TAG = f'{XML_TAG}rfc-entry'
 RFC_DOC_ID_TAG = f'{XML_TAG}doc-id'
 RFC_FORMAT_TAG = f'{XML_TAG}format'
 RFC_CURRENT_STATUS_TAG = f'{XML_TAG}current-status'
+RFC_ABSTRACT_TAG =f'{XML_TAG}abstract'
 
 RFC_STATUSES = (
     'UNKNOWN',
@@ -52,6 +53,9 @@ def update_rfc_index():
                 'url': lambda filetype: urljoin(SITE_URL, f'rfc{rfc_number}.{filetype}'),
                 'formats': [child.text for child in entry.find(RFC_FORMAT_TAG).getchildren()],
                 'current-status': entry.find(RFC_CURRENT_STATUS_TAG).text,
+                'abstract': ' '.join(child.text for child in (
+                    entry.find(RFC_ABSTRACT_TAG).getchildren() if entry.find(RFC_ABSTRACT_TAG) else []
+                )),
             }
         })
     return index
@@ -80,7 +84,7 @@ def download(rfc_numbers, desc_contain, statuses, filetypes):
 
     if desc_contain:
         rfc_subset = _get_rfc_index_subset(rfc_subset, lambda _rfc_number, rfc_values: any(
-            word in rfc_values['title'] or word in rfc_values.get('abstract', '') for word in desc_contain
+            word in rfc_values['title'] or word in rfc_values['abstract'] for word in desc_contain
         ))
 
     if statuses:
