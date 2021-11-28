@@ -5,56 +5,26 @@ from urllib.parse import urljoin
 
 import click
 from lxml import etree
-import requests
 
-import settings
-
-SITE_URL = 'https://www.ietf.org/rfc/'
-
-
-XML_TAG = '{http://www.rfc-editor.org/rfc-index}'
-RFC_ENTRY_TAG = f'{XML_TAG}rfc-entry'
-RFC_DOC_ID_TAG = f'{XML_TAG}doc-id'
-RFC_FORMAT_TAG = f'{XML_TAG}format'
-RFC_CURRENT_STATUS_TAG = f'{XML_TAG}current-status'
-RFC_ABSTRACT_TAG =f'{XML_TAG}abstract'
-
-RFC_STATUSES = (
-    'UNKNOWN',
-    'EXPERIMENTAL',
-    'INFORMATIONAL',
-    'BEST CURRENT PRACTICE',
-    'PROPOSED STANDARD',
-)
-
-TXT = 'TXT'
-HTML= 'HTML'
-PDF = 'PDF'
-XML = 'XML'
-FILETYPE_TO_FORMAT_MAPPING = {
-    TXT: 'TEXT',
-    HTML: 'HTML',
-    PDF: 'PDF',
-    XML: 'XML',
-}
-RFC_FILETYPES = FILETYPE_TO_FORMAT_MAPPING.keys()
+from rfcutils import constant
+from rfcutils import settings
 
 
 @functools.lru_cache(1)
 def update_rfc_index():
-    rfc_index_request = urllib.request.urlopen(urljoin(SITE_URL, 'rfc-index.xml'))
+    rfc_index_request = urllib.request.urlopen(constant.RFC_INDEX_URL)
     root = etree.parse(rfc_index_request)
 
     index = {}
-    for entry in root.findall(RFC_ENTRY_TAG):
-        rfc_number = entry.find(RFC_DOC_ID_TAG).text.split('RFC')[1]
+    for entry in root.findall(constant.RFC_ENTRY_TAG):
+        rfc_number = entry.find(constant.RFC_DOC_ID_TAG).text.split('RFC')[1]
         index.update({
             rfc_number: {
-                'url': lambda filetype: urljoin(SITE_URL, f'rfc{rfc_number}.{filetype}'),
-                'formats': [child.text for child in entry.find(RFC_FORMAT_TAG).getchildren()],
-                'current-status': entry.find(RFC_CURRENT_STATUS_TAG).text,
+                'url': functools.partial(constant.RFC_FILE_URL, rfc_number),
+                'formats': [child.text for child in entry.find(constant.RFC_FORMAT_TAG).getchildren()],
+                'current-status': entry.find(constant.RFC_CURRENT_STATUS_TAG).text,
                 'abstract': ' '.join(child.text for child in (
-                    entry.find(RFC_ABSTRACT_TAG).getchildren() if entry.find(RFC_ABSTRACT_TAG) else []
+                    entry.find(constant.RFC_ABSTRACT_TAG).getchildren() if entry.find(constant.RFC_ABSTRACT_TAG) else []
                 )),
             }
         })
@@ -67,9 +37,15 @@ def _get_rfc_index_subset(rfc_index, predicate):
 
 @click.command()
 @click.option('--rfc_numbers', default=['all'], multiple=True, help="rfc_numbers list to get")
-@click.option('--desc_contain', multiple=True, type=click.STRING, help="download rfc description containing the given words")
-@click.option('--statuses', type=click.Choice(RFC_STATUSES), default=[], multiple=True)
-@click.option('--filetypes', type=click.Choice(RFC_FILETYPES), default=[TXT, PDF, HTML], multiple=True, help="format to retrieved")
+@click.option(
+    '--desc_contain', type=click.STRING, multiple=True,
+    help="filter on rfc description containing the given words",
+)
+@click.option('--statuses', type=click.Choice(constant.RFC_STATUSES), default=[], multiple=True)
+@click.option(
+    '--filetypes', type=click.Choice(constant.RFC_FILETYPES),
+    default=constant.DEFAULT_FILETYPES, multiple=True, help="format to retrieved",
+)
 @click.option('--download-again', default=False, is_flag=True, help="Download again the filtered rfc list")
 def download(*args, **kwargs):
     rfc_index = update_rfc_index()
@@ -93,7 +69,7 @@ def download(*args, **kwargs):
         # FIXME: sadly, rfc-index.xml isn't perfect and doesn't provide
         # an exaustive list of available formats for each RFC
         'filetypes': lambda _rfc_number, rfc_values: any(
-            FILETYPE_TO_FORMAT_MAPPING[filetype] in rfc_values['formats'] for filetype in kwargs['filetypes']
+            constant.FILETYPE_TO_FORMAT_MAPPING[filetype] in rfc_values['formats'] for filetype in kwargs['filetypes']
         ),
     }
 
@@ -121,7 +97,3 @@ def download(*args, **kwargs):
                 continue
             path.write_text(rfc_request.read().decode('utf8'))
             break
-
-
-if __name__ == '__main__':
-    download()
