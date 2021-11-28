@@ -130,16 +130,17 @@ def download(*args, **kwargs):
     if not settings.download_path.exists():
         settings.download_path.mkdir()
 
-    for rfc_number, rfc_values in rfc_subset.items():
-        for filetype in kwargs['filetypes']:
-            path = (settings.download_path / f'rfc_{rfc_number}.{filetype.lower()}')
-            if not kwargs['download_again'] and path.exists() and path.stat().st_size:
+    with click.progressbar(rfc_subset.items(), label='Downloading RFCs', length=len(rfc_subset)) as subset:
+        for rfc_number, rfc_values in subset:
+            for filetype in kwargs['filetypes']:
+                path = (settings.download_path / f'rfc_{rfc_number}.{filetype.lower()}')
+                if not kwargs['download_again'] and path.exists() and path.stat().st_size:
+                    break
+                try:
+                    rfc_request = urllib.request.urlopen(rfc_values['url'](filetype.lower()))
+                except urllib.error.HTTPError:
+                    # raised an Http404 error since the filetype doesn't exists for this file
+                    # but it's fine we have already checked that this file should be downloaded anyway
+                    continue
+                path.write_text(rfc_request.read().decode('utf8'))
                 break
-            try:
-                rfc_request = urllib.request.urlopen(rfc_values['url'](filetype.lower()))
-            except urllib.error.HTTPError:
-                # raised an Http404 error since the filetype doesn't exists for this file
-                # but it's fine we have already checked that this file should be downloaded anyway
-                continue
-            path.write_text(rfc_request.read().decode('utf8'))
-            break
